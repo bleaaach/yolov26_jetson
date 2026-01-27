@@ -1,0 +1,4 @@
+ultralytics_data/runs/
+*.avi
+*.mp4
+*.mov
