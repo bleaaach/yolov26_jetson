@@ -1,77 +1,77 @@
 #!/bin/bash
 
-# 清理现有容器
+# Clean up existing container
 docker rm -f dual-camera-system 2>/dev/null
 
-# 清理可能存在的dual_camera_system.py文件
+# Clean up possible dual_camera_system.py file
 rm -f dual_camera_system.py 2>/dev/null
 
-# 配置
+# Configuration
 MODEL_DIR="/home/seeed/ultralytics_data"
-# 性能优化配置
-OPTIMIZED_IMGSZ=640  # TensorRT引擎固定尺寸，保持640
-JPEG_QUALITY=60  # 降低JPEG质量以减少网络传输时间
-CAMERA_WIDTH=320  # 相机宽度
-CAMERA_HEIGHT=240  # 相机高度
-CAMERA_FPS=30  # 相机帧率
+# Performance optimization configuration
+OPTIMIZED_IMGSZ=640  # Keep 640 to match TensorRT engine input
+JPEG_QUALITY=60  # Reduce JPEG quality to reduce network transmission time
+CAMERA_WIDTH=320  # Camera width
+CAMERA_HEIGHT=240  # Camera height
+CAMERA_FPS=30  # Camera frame rate
 
-# 混合量化配置 - FP16用于检测，INT8用于姿态估计和分割
+# Mixed quantization configuration - FP16 for detection, INT8 for pose estimation and segmentation
 USE_MIXED_QUANTIZATION=true
-FP16_MODELS="yolo26n"  # 检测模型使用FP16
-INT8_MODELS="yolo26n-pose yolo26n-seg"  # 姿态和分割模型使用INT8
-BATCH_SIZE=1  # 批处理大小优化
-MAX_DETECTIONS=3  # 最大检测数量限制
+FP16_MODELS="yolo26n"  # Detection models use FP16
+INT8_MODELS="yolo26n-pose yolo26n-seg"  # Pose and segmentation models use INT8
+BATCH_SIZE=1  # Batch size optimization
+MAX_DETECTIONS=3  # Maximum detection limit
 
-# Jetson 性能优化建议
-echo "=== Jetson 性能优化提示 ==="
-echo "建议运行以下命令以获得最佳性能："
-echo "  sudo nvpmodel -m 0  # 最大性能模式"
-echo "  sudo jetson_clocks  # 启用最大时钟频率"
-echo "  tegrastats  # 监控系统性能"
+# Jetson performance optimization suggestions
+echo "=== Jetson Performance Optimization Suggestions ==="
+echo "Run the following commands for best performance:"
+echo "  sudo nvpmodel -m 0  # Maximum performance mode"
+echo "  sudo jetson_clocks  # Enable maximum clock frequency"
+echo "  tegrastats  # Monitor system performance"
 echo ""
-echo "=== TensorRT FP16/INT8 混合量化优化提示 ==="
-echo "检查TensorRT引擎是否使用混合量化："
+echo "=== TensorRT FP16/INT8 Mixed Quantization Optimization Tips ==="
+echo "Check if TensorRT engines use mixed quantization:"
 echo "  trtexec --loadEngine=/home/seeed/ultralytics_data/yolo26n.engine --fp16"
 echo "  trtexec --loadEngine=/home/seeed/ultralytics_data/yolo26n-pose.engine --int8"
 echo ""
-echo "如果需要重新导出混合量化引擎："
-echo "  # FP16检测模型 (高精度检测)"
+echo "If you need to re-export mixed quantization engines:"
+echo "  # FP16 detection model (high precision detection)"
 echo "  yolo export model=yolo26n.pt format=engine device=0 half=True"
-echo "  # INT8姿态模型 (快速推理)"  
+echo "  # INT8 pose model (fast inference)"  
 echo "  yolo export model=yolo26n-pose.pt format=engine device=0 int8=True"
-echo "  # INT8分割模型 (快速分割)"
+echo "  # INT8 segmentation model (fast segmentation)"
 echo "  yolo export model=yolo26n-seg.pt format=engine device=0 int8=True"
 echo ""
 
-echo "=== 双USB相机图像处理系统启动脚本 ==="
-echo "基于YOLOv26模型和TensorRT加速"
+echo "=== Dual USB Camera Image Processing System Startup Script ==="
+echo "Based on YOLOv26 model and TensorRT acceleration"
 echo ""
-echo "系统配置:"
-echo "- 相机1: 目标检测 + 姿态估计"
-echo "- 相机2: 目标检测 + SAM模型"
-echo "- Web服务器: http://localhost:5000"
+echo "System configuration:"
+echo "- Camera 1: Object detection + Pose estimation"
+echo "- Camera 2: Object detection + SAM model"
+echo "- Web server: http://localhost:5000"
 echo ""
-echo "模型目录: $MODEL_DIR"
+echo "Model directory: $MODEL_DIR"
 echo ""
-echo "按 Ctrl+C 退出系统"
+echo "Press Ctrl+C to exit system"
 echo ""
 
-# 检查模型文件
-echo "=== 检查模型文件 ==="
+# Check model files
+echo "=== Checking Model Files ==="
 if [ ! -f "$MODEL_DIR/yolo26n.engine" ] || [ ! -f "$MODEL_DIR/yolo26n-pose.engine" ]; then
-    echo "错误: 必要的模型文件不存在"
+    echo "Error: Required model files do not exist"
     exit 1
 fi
 
-echo "✅ 模型文件检查完成"
+echo "✅ Model file check completed"
 echo ""
 
-# 创建Python脚本文件
+# Create Python script file
 cat > dual_camera_system.py << 'PYTHONEOF'
 #!/usr/bin/env python3
 """
-双USB相机图像处理系统
-基于YOLOv26模型和TensorRT加速
+Dual USB Camera Image Processing System
+Based on YOLOv26 model and TensorRT acceleration
 """
 
 import cv2
@@ -81,9 +81,9 @@ import time
 from threading import Thread
 import queue
 
-# GPU优化函数
+# GPU optimization functions
 def optimize_gpu_memory():
-    """优化GPU内存使用"""
+    """Optimize GPU memory usage"""
     try:
         import torch
         if torch.cuda.is_available():
@@ -95,7 +95,7 @@ def optimize_gpu_memory():
         pass
 
 def get_inference_stats():
-    """获取推理统计信息"""
+    """Get inference statistics"""
     try:
         import torch
         if torch.cuda.is_available():
@@ -109,37 +109,37 @@ def get_inference_stats():
         pass
     return None
 
-# 配置
+# Configuration
 MODEL_DIR = "/models"
 DETECTION_MODEL = os.path.join(MODEL_DIR, "yolo26n.engine")
 POSE_MODEL = os.path.join(MODEL_DIR, "yolo26n-pose.engine")
 SAM_MODEL = os.path.join(MODEL_DIR, "yolo26n-seg.engine")
 
-# 性能优化配置
-OPTIMIZED_IMGSZ = 640  # TensorRT引擎固定尺寸，保持640
-JPEG_QUALITY = 60  # 降低JPEG质量以减少网络传输时间
-CAMERA_WIDTH = 320  # 相机宽度
-CAMERA_HEIGHT = 240  # 相机高度
-CAMERA_FPS = 30  # 相机帧率
+# Performance optimization configuration
+OPTIMIZED_IMGSZ = 640  # Keep 640 to match TensorRT engine input
+JPEG_QUALITY = 60  # Reduce JPEG quality to reduce network transmission time
+CAMERA_WIDTH = 320  # Camera width
+CAMERA_HEIGHT = 240  # Camera height
+CAMERA_FPS = 30  # Camera frame rate
 
-# 混合量化配置
+# Mixed quantization configuration
 USE_MIXED_QUANTIZATION = True
-FP16_MODELS = ["yolo26n"]  # 检测模型使用FP16
-INT8_MODELS = ["yolo26n-pose", "yolo26n-seg"]  # 姿态和分割模型使用INT8
-BATCH_SIZE = 1  # 批处理大小优化
-MAX_DETECTIONS = 3  # 最大检测数量限制
+FP16_MODELS = ["yolo26n"]  # Detection models use FP16
+INT8_MODELS = ["yolo26n-pose", "yolo26n-seg"]  # Pose and segmentation models use INT8
+BATCH_SIZE = 1  # Batch size optimization
+MAX_DETECTIONS = 3  # Maximum detection limit
 
-# 姿态关键点阈值
+# Pose keypoint threshold
 POSE_KPT_THRESHOLD = 0.2
 
-# COCO 姿态关键点连线（17 点）
+# COCO pose keypoint connections (17 points)
 SKELETON = [
     (0,1),(0,2),(1,3),(2,4),
     (5,6),(5,7),(7,9),(6,8),(8,10),
     (5,11),(6,12),(11,12),(11,13),(13,15),(12,14),(14,16)
 ]
 
-# 类别列表（检测用）
+# Class list (for detection)
 CLASSES = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
            "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
            "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
@@ -154,61 +154,61 @@ CLASSES = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
            "toothbrush"]
 COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 
-# 自定义后处理函数
+# Custom post-processing functions
 def custom_postprocess_pose(detection_results, pose_results, frame):
-    """自定义姿态后处理函数"""
-    # 创建结果帧的副本
+    """Custom pose post-processing function"""
+    # Create a copy of result frame
     result_frame = frame.copy()
     
-    # 先处理目标检测结果
+    # Process object detection results first
     for result in detection_results:
-        # 获取框
+        # Get boxes
         boxes = result.boxes
         if boxes is not None:
-            # 一次性取完所有数据，减少 CPU-GPU 同步
+            # Get all data at once, reduce CPU-GPU synchronization
             xyxy = boxes.xyxy.cpu().numpy().astype(int)
             confs = boxes.conf.cpu().numpy()
             clss = boxes.cls.cpu().numpy().astype(int)
             
-            # 遍历每个框
+            # Iterate through each box
             for i in range(len(xyxy)):
-                # 获取框坐标
+                # Get boxes coordinates
                 x1, y1, x2, y2 = xyxy[i]
-                # 获取置信度
+                # Get confidence
                 conf = confs[i]
-                # 获取类别
+                # Get class
                 cls = clss[i]
                 
-                # 绘制框
+                # Draw box
                 color = COLORS[cls % len(COLORS)]
                 cv2.rectangle(result_frame, (x1, y1), (x2, y2), color, 2)
                 
-                # 绘制类别和置信度
+                # Draw class and confidence
                 label = f"{CLASSES[cls]}: {conf:.2f}"
                 cv2.putText(result_frame, label, (x1, y1 - 10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     
-    # 再处理姿态估计结果
+    # Then process pose estimation results
     for result in pose_results:
-        # 获取关键点
+        # Get keypoints
         keypoints = result.keypoints
         if keypoints is not None:
-            # 一次性取完所有关键点数据，减少 CPU-GPU 同步
+            # Get all keypoint data at once, reduce CPU-GPU synchronization
             kpts = keypoints.data.cpu().numpy()
             
-            # 遍历每个人
+            # Iterate through each person
             for i in range(kpts.shape[0]):
-                # 获取关键点坐标
+                # Get keypoints coordinates
                 pts = kpts[i, :, :2].astype(int)
-                # 获取置信度
+                # Get confidence
                 confs = kpts[i, :, 2]
                 
-                # 画点
+                # Draw points
                 for j, (x, y) in enumerate(pts):
                     if confs[j] > POSE_KPT_THRESHOLD:
                         cv2.circle(result_frame, (x, y), 3, (0, 255, 255), -1)
                 
-                # 画连线
+                # Draw connections
                 for j, k in SKELETON:
                     if confs[j] > POSE_KPT_THRESHOLD and confs[k] > POSE_KPT_THRESHOLD:
                         cv2.line(result_frame, tuple(pts[j]), tuple(pts[k]), (0, 200, 0), 2)
@@ -216,35 +216,35 @@ def custom_postprocess_pose(detection_results, pose_results, frame):
     return result_frame
 
 def get_optimal_model_config(model_name):
-    """获取最优模型配置，包括量化策略"""
+    """Get optimal model configuration, including quantization strategy"""
     config = {
-        'device': 0,  # GPU设备
+        'device': 0,  # GPU device
         'imgsz': OPTIMIZED_IMGSZ,
         'batch': BATCH_SIZE,
-        'conf': 0.25,  # 置信度阈值
-        'iou': 0.45,   # IoU阈值
+        'conf': 0.25,  # Confidence threshold
+        'iou': 0.45,   # IoU threshold
         'max_det': MAX_DETECTIONS,
-        'half': False,  # 默认不使用FP16
-        'int8': False,  # 默认不使用INT8
-        'optimize': True,  # 启用优化
-        'stream': True,   # 启用流模式
-        'agnostic_nms': False,  # 类无关NMS
-        'classes': [0] if 'pose' in model_name or 'seg' in model_name else None  # 姿态和分割只检测person
+        'half': False,  # Default not use FP16
+        'int8': False,  # Default not use INT8
+        'optimize': True,  # Enable optimization
+        'stream': True,   # Enable stream mode
+        'agnostic_nms': False,  # Class-agnostic NMS
+        'classes': [0] if 'pose' in model_name or 'seg' in model_name else None  # Pose and segmentation only detect person
     }
     
-    # 根据模型类型设置量化策略
+    # Set quantization strategy based on model type
     if USE_MIXED_QUANTIZATION:
         if any(fp16_model in model_name for fp16_model in FP16_MODELS):
-            config['half'] = True  # FP16量化
+            config['half'] = True  # FP16 quantization
             config['int8'] = False
         elif any(int8_model in model_name for int8_model in INT8_MODELS):
             config['half'] = False
-            config['int8'] = True  # INT8量化
+            config['int8'] = True  # INT8 quantization
     
     return config
 
 class PerformanceMonitor:
-    """性能监控器"""
+    """Performance monitor"""
     def __init__(self, name):
         self.name = name
         self.frame_times = []
@@ -254,25 +254,25 @@ class PerformanceMonitor:
         self.window_size = 30
     
     def add_frame_time(self, frame_time):
-        """添加帧处理时间"""
+        """Add frame processing time"""
         self.frame_times.append(frame_time)
         if len(self.frame_times) > self.window_size:
             self.frame_times.pop(0)
     
     def add_inference_time(self, inference_time):
-        """添加推理时间"""
+        """Add inference time"""
         self.inference_times.append(inference_time)
         if len(self.inference_times) > self.window_size:
             self.inference_times.pop(0)
     
     def add_fps(self, fps):
-        """添加FPS"""
+        """Add FPS"""
         self.fps_history.append(fps)
         if len(self.fps_history) > self.window_size:
             self.fps_history.pop(0)
     
     def get_stats(self):
-        """获取性能统计"""
+        """Get performance statistics"""
         if not self.frame_times:
             return None
         
@@ -289,60 +289,60 @@ class PerformanceMonitor:
         }
     
     def print_stats(self):
-        """打印性能统计"""
+        """Print performance statistics"""
         stats = self.get_stats()
         if stats:
-            print(f"[{self.name}] 性能统计 - FPS: {stats['avg_fps']:.1f}/{stats['fps_target']}, "
-                  f"帧时间: {stats['avg_frame_time_ms']:.1f}ms, "
-                  f"推理时间: {stats['avg_inference_time_ms']:.1f}ms, "
-                  f"性能比: {stats['performance_ratio']*100:.1f}%")
+            print(f"[{self.name}] Performance Stats - FPS: {stats['avg_fps']:.1f}/{stats['fps_target']}, "
+                  f"Frame time: {stats['avg_frame_time_ms']:.1f}ms, "
+                  f"Inference time: {stats['avg_inference_time_ms']:.1f}ms, "
+                  f"Performance ratio: {stats['performance_ratio']*100:.1f}%")
 
 def custom_postprocess_sam(detection_results, sam_results, frame):
-    """自定义SAM后处理函数"""
-    # 创建结果帧的副本
+    """Custom SAM post-processing function"""
+    # Create a copy of result frame
     result_frame = frame.copy()
     
-    # 先处理目标检测结果
+    # Process object detection results first
     for result in detection_results:
-        # 获取框
+        # Get boxes
         boxes = result.boxes
         if boxes is not None:
-            # 一次性取完所有数据，减少 CPU-GPU 同步
+            # Get all data at once, reduce CPU-GPU synchronization
             xyxy = boxes.xyxy.cpu().numpy().astype(int)
             confs = boxes.conf.cpu().numpy()
             clss = boxes.cls.cpu().numpy().astype(int)
             
-            # 遍历每个框
+            # Iterate through each box
             for i in range(len(xyxy)):
-                # 获取框坐标
+                # Get boxes coordinates
                 x1, y1, x2, y2 = xyxy[i]
-                # 获取置信度
+                # Get confidence
                 conf = confs[i]
-                # 获取类别
+                # Get class
                 cls = clss[i]
                 
-                # 绘制框
+                # Draw box
                 color = COLORS[cls % len(COLORS)]
                 cv2.rectangle(result_frame, (x1, y1), (x2, y2), color, 2)
                 
-                # 绘制类别和置信度
+                # Draw class and confidence
                 label = f"{CLASSES[cls]}: {conf:.2f}"
                 cv2.putText(result_frame, label, (x1, y1 - 10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     
-    # 再处理SAM模型结果
+    # Then process SAM model results
     for result in sam_results:
-        # 获取分割
+        # Get segmentation
         masks = result.masks
         if masks is not None:
-            # 一次性取完所有分割数据，减少 CPU-GPU 同步
+            # Get all segmentation data at once, reduce CPU-GPU synchronization
             mask_data = masks.data.cpu().numpy()
             
-            # 遍历每个分割
+            # Iterate through each segmentation
             for i in range(mask_data.shape[0]):
-                # 获取掩码
+                # Get mask
                 mask = mask_data[i]
-                # 应用掩码
+                # Apply mask
                 mask = cv2.resize(mask, (frame.shape[1], frame.shape[0]))
                 color = COLORS[i % len(COLORS)]
                 result_frame[mask > 0.5] = result_frame[mask > 0.5] * 0.7 + color * 0.3
@@ -350,9 +350,9 @@ def custom_postprocess_sam(detection_results, sam_results, frame):
     return result_frame
 
 class CameraProcessor:
-    """相机处理器基类"""
+    """Camera processor base class"""
     def __init__(self, camera_id, name):
-        """初始化相机处理器"""
+        """Initialize camera processor"""
         self.camera_id = camera_id
         self.name = name
         self.cap = None
@@ -364,18 +364,18 @@ class CameraProcessor:
         self.model_loaded = False
         self.detection_model = None
         self.secondary_model = None
-        self.latest_result = None  # 存储最新的处理结果
-        self.infer_busy = False  # 推理忙标志，用于丢帧策略
-        self.print_counter = 0  # 打印计数器，减少输出频率
-        self.performance_monitor = PerformanceMonitor(name)  # 性能监控器
+        self.latest_result = None  # Store latest processing result
+        self.infer_busy = False  # Inference busy flag, used for frame dropping strategy
+        self.print_counter = 0  # Print counter, reduce output frequency
+        self.performance_monitor = PerformanceMonitor(name)  # Performance monitor
     
     def start_capture(self):
-        """启动相机捕获"""
-        print("=== 尝试打开相机 %d (%s) ===" % (self.camera_id, self.name))
+        """Start camera capture"""
+        print("=== Attempting to open camera %d (%s) ===" % (self.camera_id, self.name))
         
-        # 尝试使用GStreamer管道（针对Jetson优化）
+        # Try using GStreamer pipeline (optimized for Jetson)
         try:
-            # 为不同的相机ID创建不同的GStreamer管道
+            # Create different GStreamer pipelines for different camera IDs
             device_path = f"/dev/video{self.camera_id}"
             gst_str = (
                 f"v4l2src device={device_path} ! "
@@ -387,106 +387,106 @@ class CameraProcessor:
             self.cap = cv2.VideoCapture(gst_str, cv2.CAP_GSTREAMER)
             
             if self.cap.isOpened():
-                print("✅ 相机 %d (%s) 打开成功 (GStreamer)" % (self.camera_id, self.name))
-                print("相机参数: 320x240 @ 30fps")
+                print("✅ Camera %d (%s) opened successfully (GStreamer)" % (self.camera_id, self.name))
+                print("Camera parameters: 320x240 @ 30fps")
                 
-                # 测试读取几帧
+                # Test read a few frames
                 for i in range(5):
                     time.sleep(0.3)
                     ret, frame = self.cap.read()
                     if ret:
-                        print("✅ 相机 %d 测试读取成功" % self.camera_id)
+                        print("✅ Camera %d test read successful" % self.camera_id)
                         return True
                     else:
-                        print("⚠️ 相机 %d 测试读取失败" % self.camera_id)
+                        print("⚠️ Camera %d test read failed" % self.camera_id)
                 
                 self.cap.release()
         except Exception as e:
-            print("⚠️ GStreamer打开失败: %s" % e)
+            print("⚠️ GStreamer open failed: %s" % e)
             if self.cap:
                 self.cap.release()
         
-        # 回退到标准V4L2
+        # Fallback to standard V4L2
         try:
             self.cap = cv2.VideoCapture(self.camera_id, cv2.CAP_V4L2)
             
             if self.cap.isOpened():
-                print("✅ 相机 %d (%s) 打开成功 (V4L2)" % (self.camera_id, self.name))
+                print("✅ Camera %d (%s) opened successfully (V4L2)" % (self.camera_id, self.name))
                 
-                # 优化相机参数
+                # Optimize camera parameters
                 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
                 self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
                 self.cap.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # 禁用自动曝光以减少延迟
-                self.cap.set(cv2.CAP_PROP_AUTO_WB, 0)  # 禁用自动白平衡以减少延迟
+                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Disable auto exposure to reduce latency
+                self.cap.set(cv2.CAP_PROP_AUTO_WB, 0)  # Disable auto white balance to reduce latency
                 
-                # 验证相机参数
+                # Verify camera parameters
                 width = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
                 height = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
                 fps = self.cap.get(cv2.CAP_PROP_FPS)
-                print("相机参数: %dx%d @ %dfps" % (int(width), int(height), fps))
+                print("Camera parameters: %dx%d @ %dfps" % (int(width), int(height), fps))
                 
-                # 测试读取几帧
+                # Test read a few frames
                 for i in range(5):
                     time.sleep(0.3)
                     ret, frame = self.cap.read()
                     if ret:
-                        print("✅ 相机 %d 测试读取成功" % self.camera_id)
+                        print("✅ Camera %d test read successful" % self.camera_id)
                         return True
                     else:
-                        print("⚠️ 相机 %d 测试读取失败" % self.camera_id)
+                        print("⚠️ Camera %d test read failed" % self.camera_id)
                 
                 self.cap.release()
         except Exception as e:
-            print("⚠️ V4L2打开失败: %s" % (e))
+            print("⚠️ V4L2 open failed: %s" % (e))
             if self.cap:
                 self.cap.release()
         
-        # 所有尝试都失败
-        raise RuntimeError("无法打开相机 %d" % self.camera_id)
+        # All attempts failed
+        raise RuntimeError("Cannot open camera %d" % self.camera_id)
     
     def capture_and_process_frames(self):
-        """捕获并处理相机帧的线程"""
+        """Thread for capturing and processing camera frames"""
         while self.running:
             try:
                 if self.cap and self.cap.isOpened():
                     ret, frame = self.cap.read()
                     if ret and self.model_loaded:
-                        # 推理忙时直接丢帧，避免延迟爆炸
+                        # Drop frame directly when inference is busy, avoid latency explosion
                         if self.infer_busy:
                             continue
-                        # 直接处理帧，不使用队列
+                        # Process frame directly, do not use queue
                         self.process_frame(frame)
                 else:
                     time.sleep(0.1)
             except Exception as e:
-                print("相机 %d 处理错误: %s" % (self.camera_id, e))
+                print("Camera %d processing error: %s" % (self.camera_id, e))
                 time.sleep(1)
     
     def process_frame(self, frame):
-        """处理单帧"""
-        # 设置推理忙标志
+        """Process single frame"""
+        # Set inference busy flag
         self.infer_busy = True
         
-        # 详细时间测量
+        # Detailed time measurement
         total_start = time.time()
         
-        # 预处理时间（包含在模型调用中）
+        # Preprocessing time (included in model call)
         model_start = time.time()
-        # 使用TensorRT优化推理
+        # Use TensorRT optimized inference
         detection_results = self.detection_model(frame, imgsz=OPTIMIZED_IMGSZ, device=0)
         pose_results = self.secondary_model(frame, task='pose', imgsz=OPTIMIZED_IMGSZ, device=0)
         model_time = (time.time() - model_start) * 1000
         
-        # 后处理时间
+        # Post-processing time
         postprocess_start = time.time()
         
-        # 单独测量后处理方法的执行时间
+        # Measure post-processing method execution time separately
         plot_start = time.time()
-        # 使用自定义后处理函数替代 plot() 方法，同时传递目标检测结果
+        # Use custom post-processing function instead of plot() method, pass object detection results
         pose_frame = custom_postprocess_pose(detection_results, pose_results, frame)
         plot_time = (time.time() - plot_start) * 1000
         
@@ -494,48 +494,49 @@ class CameraProcessor:
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         postprocess_time = (time.time() - postprocess_start) * 1000
         
-        # 总时间
+        # Total time
         total_time = (time.time() - total_start) * 1000
         
-        # 更新FPS
+        # Update FPS
         self.update_fps()
         
-        # 减少打印频率，每30帧打印一次
+        # Reduce print frequency, print every 30 frames
         self.print_counter += 1
         if self.print_counter >= 30:
-            print(f"相机1 - 总时间: {total_time:.1f}ms, 模型时间: {model_time:.1f}ms, 后处理时间: {postprocess_time:.1f}ms, plot时间: {plot_time:.1f}ms")
+            print(f"Camera1 - Total time: {total_time:.1f}ms, Model time: {model_time:.1f}ms, Post-processing time: {postprocess_time:.1f}ms, plot time: {plot_time:.1f}ms")
             self.print_counter = 0
         
-        # 存储最新结果
+        # Store latest results
         self.latest_result = pose_frame
         
-        # 清除推理忙标志
+        # Clear inference busy flag
         self.infer_busy = False
     
     def load_detection_model(self):
-        """加载目标检测模型"""
+        """Load object detection model"""
         try:
             from ultralytics import YOLO
-            # 获取优化配置
+            # Get optimal configuration
             config = get_optimal_model_config(DETECTION_MODEL)
             self.detection_model = YOLO(DETECTION_MODEL)
-            # 应用优化配置
-            self.detection_model.model.fuse()  # 融合层以优化推理
-            print(f"✅ 检测模型加载完成 - FP16: {config['half']}, INT8: {config['int8']}")
+            # Apply optimization configuration - no need to call fuse() for TensorRT engine files
+            if DETECTION_MODEL.endswith('.pt'):
+                self.detection_model.model.fuse()  # Fuse layers to optimize inference
+            print(f"✅ Detection model loaded - FP16: {config['half']}, INT8: {config['int8']}")
             return True
         except Exception as e:
-            print("❌ 目标检测模型加载失败: %s" % e)
+            print("❌ Object detection model loading failed: %s" % e)
             return False
     
     def load_secondary_model(self):
-        """加载次要模型（由子类实现）"""
+        """Load secondary model (implemented by subclass)"""
         pass
     
     def load_models(self):
-        """加载模型"""
+        """Load models"""
         try:
-            # 对于Camera1，Pose模型已经包含检测功能，不需要单独加载检测模型
-            if self.name == "相机1":
+            # For Camera1, Pose model already includes detection functionality, no need to load detection model separately
+            if self.name == "Camera1":
                 if not self.load_secondary_model():
                     return
             else:
@@ -543,45 +544,45 @@ class CameraProcessor:
                     return
             
             self.model_loaded = True
-            print("✅ %s 模型加载完成" % self.name)
+            print("✅ %s model loaded" % self.name)
         except Exception as e:
-            print("❌ %s 模型加载失败: %s" % (self.name, e))
+            print("❌ %s model loading failed: %s" % (self.name, e))
             self.model_loaded = False
     
     def start(self):
-        """启动处理器"""
+        """Start processor"""
         self.running = True
         
-        # 打开相机
+        # Open camera
         self.start_capture()
         
-        # 加载模型
+        # Load models
         self.load_models()
         
-        # 启动捕获和处理线程
+        # Start capture and processing threads
         Thread(target=self.capture_and_process_frames, daemon=True).start()
         
-        print("✅ 相机 %d (%s) 处理线程启动完成" % (self.camera_id, self.name))
+        print("✅ Camera %d (%s) processing thread started" % (self.camera_id, self.name))
     
     def stop(self):
-        """停止处理器"""
+        """Stop processor"""
         self.running = False
         
         if self.cap:
             self.cap.release()
         
-        print("✅ 相机 %d (%s) 已停止" % (self.camera_id, self.name))
+        print("✅ Camera %d (%s) stopped" % (self.camera_id, self.name))
     
     def get_result(self):
-        """获取处理结果"""
+        """Get processing result"""
         return self.latest_result
     
     def get_result_nonblock(self):
-        """非阻塞获取处理结果"""
+        """Non-blocking get processing result"""
         return self.latest_result
     
     def update_fps(self):
-        """更新FPS计算"""
+        """Update FPS calculation"""
         self.frame_count += 1
         current_time = time.time()
         elapsed = current_time - self.last_time
@@ -592,49 +593,50 @@ class CameraProcessor:
             self.frame_count = 0
 
 class Camera1Processor(CameraProcessor):
-    """相机1处理器：目标检测 + 姿态估计"""
+    """Camera1 processor: Object detection + Pose estimation"""
     def __init__(self):
-        super().__init__(0, "相机1")
+        super().__init__(0, "Camera1")
     
     def load_secondary_model(self):
-        """加载姿态估计模型"""
+        """Load pose estimation model"""
         try:
             from ultralytics import YOLO
-            # 获取优化配置
+            # Get optimal configuration
             config = get_optimal_model_config(POSE_MODEL)
             self.secondary_model = YOLO(POSE_MODEL)
-            # 应用优化配置
-            self.secondary_model.model.fuse()  # 融合层以优化推理
-            # 不需要单独加载检测模型，Pose模型已经包含检测功能
+            # Apply optimization configuration - no need to call fuse() for TensorRT engine files
+            if POSE_MODEL.endswith('.pt'):
+                self.secondary_model.model.fuse()  # Fuse layers to optimize inference
+            # No need to load detection model separately, Pose model already includes detection functionality
             self.detection_model = None
-            print(f"✅ 姿态模型加载完成 - FP16: {config['half']}, INT8: {config['int8']}")
+            print(f"✅ Pose model loaded - FP16: {config['half']}, INT8: {config['int8']}")
             return True
         except Exception as e:
-            print("❌ 姿态估计模型加载失败: %s" % e)
+            print("❌ Pose estimation model loading failed: %s" % e)
             return False
     
     def process_frame(self, frame):
-        """处理单帧"""
-        # 设置推理忙标志
+        """Process single frame"""
+        # Set inference busy flag
         self.infer_busy = True
         
-        # 详细时间测量
+        # Detailed time measurement
         total_start = time.time()
         
-        # 预处理时间（包含在模型调用中）
+        # Preprocessing time (included in model call)
         model_start = time.time()
-        # 只运行一次Pose模型推理，Pose模型已经包含检测功能
-        # 使用优化配置进行推理
+        # Only run Pose model inference once, Pose model already includes detection functionality
+        # Use optimized configuration for inference
         pose_config = get_optimal_model_config(POSE_MODEL)
-        pose_results = self.secondary_model(frame, task='pose', **pose_config)
+        pose_results = list(self.secondary_model(frame, task='pose', **pose_config))
         model_time = (time.time() - model_start) * 1000
         
-        # 后处理时间
+        # Post-processing time
         postprocess_start = time.time()
         
-        # 单独测量后处理方法的执行时间
+        # Measure post-processing method execution time separately
         plot_start = time.time()
-        # 直接从pose_results中提取检测框和关键点进行绘制
+        # Extract detection boxes and keypoints from pose_results for drawing
         pose_frame = custom_postprocess_pose(pose_results, pose_results, frame)
         plot_time = (time.time() - plot_start) * 1000
         
@@ -642,102 +644,103 @@ class Camera1Processor(CameraProcessor):
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         postprocess_time = (time.time() - postprocess_start) * 1000
         
-        # 总时间
+        # Total time
         total_time = (time.time() - total_start) * 1000
         
-        # 更新FPS
+        # Update FPS
         self.update_fps()
         
-        # 记录性能数据
+        # Record performance data
         self.performance_monitor.add_frame_time(total_time)
         self.performance_monitor.add_inference_time(model_time)
         self.performance_monitor.add_fps(self.fps)
         
-        # 定期优化GPU内存和打印性能统计
+        # Periodically optimize GPU memory and print performance statistics
         if self.frame_count % 100 == 0:
             optimize_gpu_memory()
             stats = get_inference_stats()
             if stats:
-                print(f"GPU内存使用: {stats['memory_used_gb']:.2f}GB / {stats['memory_reserved_gb']:.2f}GB")
+                print(f"GPU memory usage: {stats['memory_used_gb']:.2f}GB / {stats['memory_reserved_gb']:.2f}GB")
             self.performance_monitor.print_stats()
         
-        # 减少打印频率，每30帧打印一次
+        # Reduce print frequency, print every 30 frames
         self.print_counter += 1
         if self.print_counter >= 30:
-            print(f"相机1 - 总时间: {total_time:.1f}ms, Pose模型: {pose_results[0].speed['inference']:.1f}ms, 后处理: {postprocess_time:.1f}ms, plot: {plot_time:.1f}ms")
+            print(f"Camera1 - Total time: {total_time:.1f}ms, Pose model: {pose_results[0].speed['inference']:.1f}ms, Post-processing: {postprocess_time:.1f}ms, plot: {plot_time:.1f}ms")
             self.print_counter = 0
         
-        # 存储最新结果
+        # Store latest results
         self.latest_result = pose_frame
         
-        # 清除推理忙标志
+        # Clear inference busy flag
         self.infer_busy = False
 
 class Camera2Processor(CameraProcessor):
-    """相机2处理器：目标检测 + SAM模型"""
+    """Camera2 processor: Object detection + SAM model"""
     def __init__(self):
-        super().__init__(1, "相机2")
-        self.frame_id = 0  # 帧计数器，用于SAM低频触发
-        self.last_sam = None  # 缓存上一次的SAM结果
+        super().__init__(1, "Camera2")
+        self.frame_id = 0  # Frame counter, used for SAM low-frequency trigger
+        self.last_sam = None  # Cache previous SAM results
     
     def load_secondary_model(self):
-        """加载SAM模型"""
+        """Load SAM model"""
         try:
             from ultralytics import YOLO
             if os.path.exists(SAM_MODEL):
-                # 获取优化配置
+                # Get optimal configuration
                 config = get_optimal_model_config(SAM_MODEL)
                 self.secondary_model = YOLO(SAM_MODEL)
-                # 应用优化配置
-                self.secondary_model.model.fuse()  # 融合层以优化推理
-                print(f"✅ SAM模型加载完成 - FP16: {config['half']}, INT8: {config['int8']}")
+                # Apply optimization configuration - no need to call fuse() for TensorRT engine files
+                if SAM_MODEL.endswith('.pt'):
+                    self.secondary_model.model.fuse()  # Fuse layers to optimize inference
+                print(f"✅ SAM model loaded - FP16: {config['half']}, INT8: {config['int8']}")
             else:
-                print("⚠️ SAM模型不存在，将使用目标检测的分割结果")
+                print("⚠️ SAM model does not exist, will use object detection segmentation results")
             return True
         except Exception as e:
-            print("❌ SAM模型加载失败: %s" % e)
+            print("❌ SAM model loading failed: %s" % e)
             return True
     
     def process_frame(self, frame):
-        """处理单帧"""
-        # 设置推理忙标志
+        """Process single frame"""
+        # Set inference busy flag
         self.infer_busy = True
         
-        # 详细时间测量
+        # Detailed time measurement
         total_start = time.time()
         
-        # 模型时间（包含预处理和推理）
+        # Model time (includes preprocessing and inference)
         model_start = time.time()
         
-        # 获取优化配置
+        # Get optimal configuration
         detection_config = get_optimal_model_config(DETECTION_MODEL)
         
-        # 先运行目标检测模型，每帧都运行
-        detection_results = self.detection_model(frame, **detection_config)
+        # Run object detection model first, run every frame
+        detection_results = list(self.detection_model(frame, **detection_config))
         
-        # SAM模型改为低频触发：每5帧运行一次
+        # SAM model changed to low-frequency trigger: run every 5 frames
         self.frame_id += 1
-        SAM_INTERVAL = 5  # SAM模型每N帧运行一次
+        SAM_INTERVAL = 5  # SAM model runs every N frames
         
         if self.secondary_model and self.frame_id % SAM_INTERVAL == 0:
             try:
                 sam_config = get_optimal_model_config(SAM_MODEL)
-                sam_results = self.secondary_model(frame, **sam_config)
-                self.last_sam = sam_results  # 缓存SAM结果
+                sam_results = list(self.secondary_model(frame, **sam_config))
+                self.last_sam = sam_results  # Cache SAM results
             except Exception as e:
-                print("SAM推理失败: %s" % e)
+                print("SAM inference failed: %s" % e)
         
-        # 使用缓存的SAM结果
+        # Use cached SAM results
         sam_results = self.last_sam if self.last_sam is not None else detection_results
         
         model_time = (time.time() - model_start) * 1000
         
-        # 后处理时间
+        # Post-processing time
         postprocess_start = time.time()
         
-        # 单独测量后处理方法的执行时间
+        # Measure post-processing method execution time separately
         plot_start = time.time()
-        # 使用自定义后处理函数替代 plot() 方法，同时传递目标检测结果
+        # Use custom post-processing function instead of plot() method, pass object detection results
         result_frame = custom_postprocess_sam(detection_results, sam_results, frame)
         plot_time = (time.time() - plot_start) * 1000
         
@@ -745,36 +748,36 @@ class Camera2Processor(CameraProcessor):
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         postprocess_time = (time.time() - postprocess_start) * 1000
         
-        # 总时间
+        # Total time
         total_time = (time.time() - total_start) * 1000
         
-        # 更新FPS
+        # Update FPS
         self.update_fps()
         
-        # 定期优化GPU内存
+        # Periodically optimize GPU memory
         if self.frame_count % 100 == 0:
             optimize_gpu_memory()
             stats = get_inference_stats()
             if stats:
-                print(f"GPU内存使用: {stats['memory_used_gb']:.2f}GB / {stats['memory_reserved_gb']:.2f}GB")
+                print(f"GPU memory usage: {stats['memory_used_gb']:.2f}GB / {stats['memory_reserved_gb']:.2f}GB")
         
-        # 减少打印频率，每30帧打印一次
+        # Reduce print frequency, print every 30 frames
         self.print_counter += 1
         if self.print_counter >= 30:
-            sam_status = "新" if self.frame_id % SAM_INTERVAL == 0 else "缓存"
-            print(f"相机2 - 总时间: {total_time:.1f}ms, 检测模型: {detection_results[0].speed['inference']:.1f}ms, SAM: {sam_status}, 后处理: {postprocess_time:.1f}ms, plot: {plot_time:.1f}ms")
+            sam_status = "New" if self.frame_id % SAM_INTERVAL == 0 else "Cached"
+            print(f"Camera2 - Total time: {total_time:.1f}ms, Detection model: {detection_results[0].speed['inference']:.1f}ms, SAM: {sam_status}, Post-processing: {postprocess_time:.1f}ms, plot: {plot_time:.1f}ms")
             self.print_counter = 0
         
-        # 存储最新结果
+        # Store latest results
         self.latest_result = result_frame
         
-        # 清除推理忙标志
+        # Clear inference busy flag
         self.infer_busy = False
 
 class DualCameraSystem:
-    """双相机系统"""
+    """Dual camera system"""
     def __init__(self):
-        """初始化双相机系统"""
+        """Initialize dual camera system"""
         self.camera1 = None
         self.camera2 = None
         self.camera1_available = False
@@ -782,8 +785,8 @@ class DualCameraSystem:
         self.running = False
     
     def find_available_cameras(self):
-        """寻找可用的相机"""
-        print("=== 寻找可用的相机 ===")
+        """Find available cameras"""
+        print("=== Finding available cameras ===")
         
         available_cameras = []
         for idx in [0, 1, 2, 3, 4]:
@@ -793,7 +796,7 @@ class DualCameraSystem:
                     time.sleep(0.3)
                     ret, frame = cap.read()
                     if ret:
-                        print("✅ 相机索引 %d 可用" % idx)
+                        print("✅ Camera index %d available" % idx)
                         available_cameras.append(idx)
                     cap.release()
                 else:
@@ -801,11 +804,11 @@ class DualCameraSystem:
             except Exception:
                 pass
         
-        print("找到 %d 个可用相机: %s" % (len(available_cameras), available_cameras))
+        print("Found %d available cameras: %s" % (len(available_cameras), available_cameras))
         return available_cameras
     
     def start_web_server(self):
-        """启动Web服务器"""
+        """Start web server"""
         try:
             from flask import Flask, Response
             import threading
@@ -814,7 +817,7 @@ class DualCameraSystem:
             app = Flask(__name__)
             
             def generate_frames(camera_id):
-                """生成视频流帧"""
+                """Generate video stream frames"""
                 while True:
                     if camera_id == 1 and self.camera1_available:
                         frame = self.camera1.get_result_nonblock()
@@ -833,11 +836,11 @@ class DualCameraSystem:
             
             @app.route('/')
             def index():
-                """主页"""
+                """Home page"""
                 return '''
                 <html>
                 <head>
-                    <title>双相机图像处理系统</title>
+                    <title>Dual Camera Image Processing System</title>
                     <style>
                         body { font-family: Arial, sans-serif; margin: 20px; }
                         h1 { color: #333; }
@@ -847,16 +850,16 @@ class DualCameraSystem:
                     </style>
                 </head>
                 <body>
-                    <h1>双相机图像处理系统</h1>
-                    <p>基于YOLOv26模型和TensorRT加速</p>
+                    <h1>Dual Camera Image Processing System</h1>
+                    <p>Based on YOLOv26 model and TensorRT acceleration</p>
                     
                     <div class="camera-container">
-                        <h2>相机1: 目标检测 + 姿态估计</h2>
+                        <h2>Camera 1: Object detection + Pose estimation</h2>
                         <img src="/video_feed/1" width="640">
                     </div>
                     
                     <div class="camera-container">
-                        <h2>相机2: 目标检测 + SAM模型</h2>
+                        <h2>Camera 2: Object detection + SAM model</h2>
                         <img src="/video_feed/2" width="640">
                     </div>
                 </body>
@@ -865,78 +868,78 @@ class DualCameraSystem:
             
             @app.route('/video_feed/<int:camera_id>')
             def video_feed(camera_id):
-                """视频流"""
+                """Video stream"""
                 return Response(generate_frames(camera_id),
                                 mimetype='multipart/x-mixed-replace; boundary=frame')
             
-            # 启动Web服务器
+            # Start web server
             threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5000, 
                                                   debug=False, threaded=True), 
                           daemon=True).start()
             
-            print("✅ Web服务器启动成功")
-            print("请在浏览器中访问: http://localhost:5000")
+            print("✅ Web server started successfully")
+            print("Please visit in browser: http://localhost:5000")
             
         except Exception as e:
-            print("❌ Web服务器启动失败: %s" % e)
+            print("❌ Web server startup failed: %s" % e)
     
     def start(self):
-        """启动双相机系统"""
-        print("=== 双USB相机图像处理系统启动 ===")
-        print("基于YOLOv26模型和TensorRT加速")
-        print("相机1: 目标检测 + 姿态估计")
-        print("相机2: 目标检测 + SAM模型")
+        """Start dual camera system"""
+        print("=== Dual USB Camera Image Processing System Startup ===")
+        print("Based on YOLOv26 model and TensorRT acceleration")
+        print("Camera 1: Object detection + Pose estimation")
+        print("Camera 2: Object detection + SAM model")
         print("")
         
-        # 寻找可用的相机
+        # Find available cameras
         available_cameras = self.find_available_cameras()
         
         if len(available_cameras) == 0:
-            print("❌ 没有可用的相机，系统无法启动")
+            print("❌ No available cameras, system cannot start")
             return
         
-        # 启动相机1
+        # Start camera 1
         if len(available_cameras) >= 1:
-            print("启动相机1...")
+            print("Starting camera 1...")
             try:
                 self.camera1 = Camera1Processor()
                 self.camera1.camera_id = available_cameras[0]
                 self.camera1.start()
-                print("✅ 相机1启动成功")
+                print("✅ Camera 1 started successfully")
                 self.camera1_available = True
             except Exception as e:
-                print("❌ 相机1启动失败: %s" % e)
+                print("❌ Camera 1 startup failed: %s" % e)
         
-        # 启动相机2
+        # Start camera 2
         if len(available_cameras) >= 2:
-            print("启动相机2...")
+            print("Starting camera 2...")
             try:
                 self.camera2 = Camera2Processor()
                 self.camera2.camera_id = available_cameras[1]
                 self.camera2.start()
-                print("✅ 相机2启动成功")
+                print("✅ Camera 2 started successfully")
                 self.camera2_available = True
             except Exception as e:
-                print("❌ 相机2启动失败: %s" % e)
+                print("❌ Camera 2 startup failed: %s" % e)
         else:
-            print("⚠️ 没有足够的可用相机，只启动相机1")
+            print("⚠️ Not enough available cameras, only start camera 1")
         
-        # 检查是否有可用相机
+        # Check if there are available cameras
         if not self.camera1_available and not self.camera2_available:
-            print("❌ 没有可用的相机，系统无法启动")
+            print("❌ No available cameras, system cannot start")
             return
         
-        # 启动Web服务器
+        # Start web server
         self.start_web_server()
         
         self.running = True
         print("")
-        print("=== 双相机系统启动完成 ===")
-        print("可用相机: %s%s" % ("相机1 " if self.camera1_available else "", "相机2" if self.camera2_available else ""))
-        print("按 Ctrl+C 退出系统")
+        print("=== Dual camera system startup completed ===")
+        print("Available cameras: %s%s" % ("Camera1 " if self.camera1_available else "", "Camera2" if self.camera2_available else ""))
+        print("Press Ctrl+C to exit system")
         print("")
         
-        # 主循环
+        # Main loop
         while self.running:
             try:
                 time.sleep(1)
@@ -944,12 +947,12 @@ class DualCameraSystem:
                 self.running = False
                 break
         
-        # 停止系统
+        # Stop system
         self.stop()
     
     def stop(self):
-        """停止双相机系统"""
-        print("=== 正在停止双相机系统 ===")
+        """Stop dual camera system"""
+        print("=== Stopping dual camera system ===")
         self.running = False
         
         if self.camera1_available:
@@ -957,32 +960,36 @@ class DualCameraSystem:
         if self.camera2_available:
             self.camera2.stop()
         
-        print("=== 双相机系统已停止 ===")
+        print("=== Dual camera system stopped ===")
 
 def main():
-    """主函数"""
+    """Main function"""
     try:
-        # 检查模型文件
+        # Check model files
         if not os.path.exists(DETECTION_MODEL) or not os.path.exists(POSE_MODEL):
-            raise FileNotFoundError("必要的模型文件不存在")
+            raise FileNotFoundError("Required model files do not exist")
         
-        # 启动双相机系统
+        # Start dual camera system
         system = DualCameraSystem()
         system.start()
         
     except Exception as e:
-        print("错误: %s" % e)
+        print("Error: %s" % e)
 
 if __name__ == "__main__":
     main()
 PYTHONEOF
 
-# 启动Docker容器
+# Start Docker container
 docker run --privileged -it --name dual-camera-system --runtime=nvidia --gpus all --ipc=host --network=host \
+    --device=/dev/video0 \
+    --device=/dev/video1 \
+    --device=/dev/video2 \
+    --device=/dev/video3 \
     -v "$MODEL_DIR:/models" \
     -v "$(pwd)/dual_camera_system.py:/app/dual_camera_system.py" \
     ultralytics/ultralytics:latest-jetson-jetpack6 \
     bash -c "pip install flask --quiet && python3 /app/dual_camera_system.py"
 
-# 清理临时文件
+# Clean up temporary files
 rm -f dual_camera_system.py
