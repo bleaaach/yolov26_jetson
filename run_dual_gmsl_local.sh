@@ -18,8 +18,8 @@ CAPTURE_WIDTH=1920
 CAPTURE_HEIGHT=1536
 
 # 处理分辨率（优化处理速度）
-PROCESS_WIDTH=640
-PROCESS_HEIGHT=480
+PROCESS_WIDTH=1280
+PROCESS_HEIGHT=960
 
 # 显示分辨率
 DISPLAY_WIDTH=640
@@ -147,11 +147,21 @@ POSE_MODEL = os.path.join(MODEL_DIR, "yolo26n-pose.pt")
 SEG_MODEL = os.path.join(MODEL_DIR, "yolo26n-seg.pt")
 
 # AGX Orin优化处理间隔
-DETECT_INTERVAL = 4
-POSE_INTERVAL = 10
-SEG_INTERVAL = 15
+DETECT_INTERVAL = 1
+POSE_INTERVAL = 2
+SEG_INTERVAL = 3
 
-CLASSES = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck"]
+CLASSES = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
+    "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
+    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+    "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
+    "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush"
+]
 COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 
 class AGXOrinCameraCapture:
@@ -353,25 +363,21 @@ def agx_orin_postprocess_detection(detection_results, frame):
                 clss = boxes_cpu.cls.numpy().astype(int)
                 
                 # AGX Orin可以处理更多检测
-                for i in range(min(len(xyxy), 3)):
+                for i in range(min(len(xyxy), 20)):
                     x1, y1, x2, y2 = xyxy[i]
                     conf = confs[i]
                     cls = clss[i]
                     
-                    if conf > 0.6:
+                    if conf > 0.25:
                         color = COLORS[int(cls) % len(COLORS)]
                         cv2.rectangle(result_frame, (x1, y1), (x2, y2), color, 2)
-                        if conf > 0.7:
-                            names = getattr(result, 'names', None)
-                            if isinstance(names, dict) and int(cls) in names:
-                                label_name = names[int(cls)]
-                            elif int(cls) < len(CLASSES):
+                        if conf > 0.25:
+                            label_name = str(int(cls))
+                            if int(cls) < len(CLASSES):
                                 label_name = CLASSES[int(cls)]
-                            else:
-                                label_name = str(int(cls))
-                            label = f"{label_name}:{conf:.2f}"
-                            cv2.putText(result_frame, label, (x1, max(12, y1-6)),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                            
+                            label = f"{label_name} {conf:.2f}"
+                            cv2.putText(result_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
     
     return result_frame
 
@@ -393,16 +399,25 @@ def agx_orin_postprocess_pose(pose_results, frame):
                 kpts = keypoints.xy.numpy()
                 confs = keypoints.conf.numpy()
                 
-                if len(kpts) > 0 and len(kpts[0]) > 0:
-                    for i, (x, y) in enumerate(kpts[0]):
-                        if confs[0][i] > 0.5:
-                            cv2.circle(result_frame, (int(x), int(y)), 3, (0, 255, 255), -1)
-                    for idx1, idx2 in pose_connections:
-                        if idx1 < len(kpts[0]) and idx2 < len(kpts[0]):
-                            if confs[0][idx1] > 0.5 and confs[0][idx2] > 0.5:
-                                pt1 = (int(kpts[0][idx1][0]), int(kpts[0][idx1][1]))
-                                pt2 = (int(kpts[0][idx2][0]), int(kpts[0][idx2][1]))
-                                cv2.line(result_frame, pt1, pt2, (0, 255, 0), 1)
+                if len(kpts) > 0:
+                    # 遍历所有检测到的人
+                    for person_idx, person_kpts in enumerate(kpts):
+                        person_confs = confs[person_idx]
+                        
+                        if len(person_kpts) > 0:
+                            # 绘制关键点
+                            for i, (x, y) in enumerate(person_kpts):
+                                if person_confs[i] > 0.15: # 使用更低的阈值改善连续性
+                                    cv2.circle(result_frame, (int(x), int(y)), 4, (0, 255, 255), -1)
+                            
+                            # 绘制骨骼连接
+                            for idx1, idx2 in pose_connections:
+                                if idx1 < len(person_kpts) and idx2 < len(person_kpts):
+                                    # 只要点存在且置信度非极低就连接
+                                    if person_confs[idx1] > 0.15 and person_confs[idx2] > 0.15:
+                                        pt1 = (int(person_kpts[idx1][0]), int(person_kpts[idx1][1]))
+                                        pt2 = (int(person_kpts[idx2][0]), int(person_kpts[idx2][1]))
+                                        cv2.line(result_frame, pt1, pt2, (0, 255, 0), 2)
     
     return result_frame
 
@@ -418,16 +433,22 @@ def agx_orin_postprocess_seg(seg_results, frame):
                 if hasattr(masks, 'data'):
                     mask_data = masks.data.numpy()
                     if len(mask_data.shape) == 3:
-                        for i, mask in enumerate(mask_data[:2]):
+                        overlay = np.zeros_like(result_frame)
+                        has_mask = False
+                        
+                        # Process up to 10 masks for performance
+                        for i, mask in enumerate(mask_data[:10]):
                             color = COLORS[i % len(COLORS)]
                             mask_resized = cv2.resize(mask, (frame.shape[1], frame.shape[0]))
-                            mask_resized = (mask_resized > 0.6).astype(np.uint8)
+                            mask_resized = (mask_resized > 0.5).astype(np.uint8)
                             
-                            colored_mask = np.zeros_like(result_frame)
-                            colored_mask[mask_resized == 1] = color
+                            # Accumulate masks on overlay
+                            overlay[mask_resized == 1] = color
+                            has_mask = True
                             
+                        if has_mask:
                             alpha = 0.35
-                            result_frame = cv2.addWeighted(result_frame, 1, colored_mask, alpha, 0)
+                            result_frame = cv2.addWeighted(result_frame, 1, overlay, alpha, 0)
     
     return result_frame
 
@@ -476,6 +497,10 @@ class AGXOrinProcessor:
     
     def _process_loop(self):
         """AGX Orin优化的处理循环"""
+        # 初始化Seg跳帧变量
+        seg_frame_count = 0
+        last_seg_result = None
+
         while self.running:
             frame = self.capture.get_frame()
             if frame is not None:
@@ -505,9 +530,17 @@ class AGXOrinProcessor:
         # 模型推理：AGX Orin可以并行处理
         model_start = time.time()
         
-        # 检测模型：按间隔处理
+        # 错峰运行策略：
+        # 偶数帧：运行检测任务 (Detect)
+        # 奇数帧：运行次要任务 (Pose/Seg)
+        # 这样可以将负载分散到每一帧，避免单帧耗时过高
+        
+        run_detect = (self.frame_id % 2 == 0)
+        run_secondary = (self.frame_id % 2 != 0)
+        
+        # 检测模型
         detection_model = self.model_manager.get_detection_model()
-        if self.frame_id % DETECT_INTERVAL == 0:
+        if run_detect:
             prediction = detection_model.predict(
                 source=process_frame,
                 task="detect",
@@ -515,60 +548,66 @@ class AGXOrinProcessor:
                 device=0,
                 half=True,
                 verbose=False,
-                conf=0.6,
+                conf=0.25,
                 iou=0.45,
-                max_det=3
+                max_det=20
             )
             detection_results = list(prediction)
             self.last_detection = detection_results
         else:
             detection_results = self.last_detection if self.last_detection is not None else []
         
-        # 次要任务：AGX Orin可以更频繁处理
+        # 次要任务
         secondary_results = []
-        if self.task_type == 'pose' and self.frame_id % POSE_INTERVAL == 0:
-            pose_model = self.model_manager.get_pose_model()
-            try:
-                prediction = pose_model.predict(
-                    source=process_frame,
-                    task="pose",
-                    imgsz=OPTIMIZED_IMGSZ,
-                    device=0,
-                    half=True,
-                    verbose=False,
-                    conf=0.6,
-                    iou=0.45,
-                    max_det=2
-                )
-                secondary_results = list(prediction)
-                self.last_secondary = secondary_results
-            except Exception as e:
-                print(f"{self.name} Pose error: {e}")
-                secondary_results = []
-        elif self.task_type == 'seg' and self.frame_id % SEG_INTERVAL == 0:
-            seg_model = self.model_manager.get_seg_model()
-            try:
-                prediction = seg_model.predict(
-                    source=process_frame,
-                    task="segment",
-                    imgsz=OPTIMIZED_IMGSZ,
-                    device=0,
-                    half=True,
-                    verbose=False,
-                    conf=0.55,
-                    iou=0.45,
-                    max_det=2
-                )
-                secondary_results = list(prediction)
-                self.last_secondary = secondary_results
-            except Exception as e:
-                print(f"{self.name} Seg error: {e}")
-                secondary_results = []
+        if run_secondary:
+            if self.task_type == 'pose':
+                pose_model = self.model_manager.get_pose_model()
+                try:
+                    prediction = pose_model.predict(
+                        source=process_frame,
+                        task="pose",
+                        imgsz=OPTIMIZED_IMGSZ,
+                        device=0,
+                        half=True,
+                        verbose=False,
+                        conf=0.25,
+                        iou=0.45,
+                        max_det=6
+                    )
+                    secondary_results = list(prediction)
+                    self.last_secondary = secondary_results
+                except Exception as e:
+                    print(f"{self.name} Pose error: {e}")
+                    secondary_results = []
+            elif self.task_type == 'seg':
+                seg_model = self.model_manager.get_seg_model()
+                try:
+                    prediction = seg_model.predict(
+                        source=process_frame,
+                        task="segment",
+                        imgsz=OPTIMIZED_IMGSZ,
+                        device=0,
+                        half=True,
+                        verbose=False,
+                        conf=0.25,
+                        iou=0.45,
+                        max_det=20,
+                        retina_masks=False
+                    )
+                    secondary_results = list(prediction)
+                    self.last_secondary = secondary_results
+                except Exception as e:
+                    print(f"{self.name} Seg error: {e}")
+                    secondary_results = []
         else:
             # 使用缓存结果
             secondary_results = self.last_secondary if self.last_secondary is not None else []
         
         model_time = (time.time() - model_start) * 1000
+        
+        # 打印详细耗时
+        if self.print_counter % 30 == 0:
+            print(f"Time: {model_time:.1f}ms (FPS: {1000/model_time:.1f})")
         
         # 后处理绘制顺序：seg优先，detect覆盖其上
         if self.task_type == 'seg' and secondary_results:
@@ -587,9 +626,9 @@ class AGXOrinProcessor:
         task_info = f"FPS: {self.fps:.1f} | Proc: {avg_process_time:.1f}ms"
         
         if self.task_type == 'pose':
-            task_info += f" | Pose: {'Active' if self.frame_id % POSE_INTERVAL == 0 else 'Cache'}"
+            task_info += f" | Pose: {'Active' if run_secondary else 'Cache'}"
         elif self.task_type == 'seg':
-            task_info += f" | Seg: {'Active' if self.frame_id % SEG_INTERVAL == 0 else 'Cache'}"
+            task_info += f" | Seg: {'Active' if run_secondary else 'Cache'}"
         
         cv2.putText(display_frame, task_info, (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
